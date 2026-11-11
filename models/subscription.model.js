@@ -16,64 +16,72 @@ const subscriptionSchema = new mongoose.Schema(
       min: [0, 'Price must be greater than 0'],
     },
 
+    // 1. Diperbaiki: Enum mata uang yang benar
     currency: {
-    type: String,
-    enum: ['daily','weekly', 'monthly' , 'yearly'],
+      type: String,
+      enum: ['USD', 'EUR', 'GBP', 'IDR'],
+      default: 'IDR',
     },
- 
+
+    // 2. Ditambahkan: Field frequency yang sebelumnya hilang
+    frequency: {
+      type: String,
+      enum: ['daily', 'weekly', 'monthly', 'yearly'],
+      required: [true, 'Subscription frequency is required'],
+    },
+
+    // 3. Diperbaiki: Typo 'entertainment' (ditambah huruf n)
     category: {
-    type: String,
-    enum: ['sports', 'news', 'entertaiment', 'lifestyle', 'technology', 'finance' , 'politics' , 'other'],
-    required : true,
+      type: String,
+      enum: ['sports', 'news', 'entertainment', 'lifestyle', 'technology', 'finance', 'politics', 'other'],
+      required: true,
     },
 
     paymentMethod: {
-    type: String,
-    required: true,
-    trim: true,
+      type: String,
+      required: true,
+      trim: true,
     },
 
     status: {
-        type: String,
-        enum: ['active', 'canceled', 'expired'],
-        default: 'active',
+      type: String,
+      enum: ['active', 'canceled', 'expired'],
+      default: 'active',
     },
 
     startDate: {
-        type: Date,
-        required: true,
-        validate: {
-            validator:(value) => value < new Date(),
-            message: ' Start date must be in the past',
-        }
+      type: Date,
+      required: true,
+      validate: {
+        validator: (value) => value <= new Date(),
+        message: 'Start date must be in the past or today',
+      },
     },
 
-renewalDate: {
-  type: Date,
-  required: true,
-  validate: {
-    validator: function (value) {
-      return value > this.startDate;
+    renewalDate: {
+      type: Date,
+      validate: {
+        validator: function (value) {
+          return value > this.startDate;
+        },
+        message: 'Renewal date must be after the start date',
+      },
     },
-    message: 'Renewal date must be after the start date',
-  },
-},
 
-user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
-}
-
-
-
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );
 
-subscriptionSchema.pre('save', function (next) {
-  if (!this.renewalDate) {
+// 4. Diubah ke pre('validate') agar renewalDate dihitung SEBELUM schema divalidasi
+// Mongoose 9: hook tidak lagi menerima next(). Fungsi sinkron / async cukup return.
+subscriptionSchema.pre('validate', function () {
+  if (!this.renewalDate && this.startDate) {
     const renewalPeriods = {
       daily: 1,
       weekly: 7,
@@ -83,13 +91,11 @@ subscriptionSchema.pre('save', function (next) {
 
     this.renewalDate = new Date(this.startDate);
     this.renewalDate.setDate(this.renewalDate.getDate() + (renewalPeriods[this.frequency] || 30));
+  }
 
-    if (this.renewalDate < new Date()) {
-      this.status = 'expired';
-    }
-  } // <-- Tambahkan kurung tutup untuk 'if (!this.renewalDate)' di sini
-
-  next();
+  if (this.renewalDate && this.renewalDate < new Date()) {
+    this.status = 'expired';
+  }
 });
 
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
